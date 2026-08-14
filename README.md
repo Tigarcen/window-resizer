@@ -1,18 +1,35 @@
-## 这是一个主要用于强制改变Windows窗口大小的小工具
+# Window Resizer
 
-### 构建为exe的命令
- ```shell
- ps2exe -InputFile ".\ForceResize.ps1" -OutputFile ".\ForceResize.exe" -RequireAdmin -NoConsole
- ```
+## 一个轻量级的 Windows 窗口大小与位置调整工具。通过 PID 或鼠标点击拾取目标窗口，精准控制其尺寸和屏幕位置。
 
-### 基础功能
- + 拾取窗口
-  点击这个按钮之后点击要改变大小的窗口
- + 自动填充窗口pid以及宽高
- + 强制改变窗口大小的按钮
-  - 其实做这个的初衷是，我用网易UU远程的时候，发现它的视窗宽高有下限，不利于摸鱼
+## 🎯 主要功能
 
-### 扩展功能
- + 在小工具界面里手动调节窗口的位置
-  - 可以自行去任务管理器里找窗口的pid
-  - 这个功能可以用于把飞出显示器可视范围的窗口拉回来
+### 🔍 拾取窗口
+点击 **"拾取窗口"** 按钮，然后点击任意目标窗口，即可自动获取其 PID、宽高和当前位置。
+
+### 📐 强制调整大小
+输入目标宽度和高度，点击 **"强制调整大小"** 即可改变窗口尺寸。
+
+> 💡 **初衷**：使用网易 UU 远程时，其视窗大小有下限，不利于摸鱼时观看视频/文档。这个小工具就是为了突破这个限制而生。
+
+### 🧭 窗口定位（扩展功能）
+通过 X/Y 滑块，手动调整窗口在屏幕上的位置。
+
+> 💡 **适用场景**：当某个窗口因误操作飞出显示器可视范围时，可用此功能将其"拉"回来。
+
+---
+
+## 🚀 使用方法
+
+### 方式一：直接运行 EXE（推荐）
+下载 [Releases](https://github.com/Tigarcen/window-resizer/releases) 中的 `ForceResize.exe`，双击运行即可。无需安装任何环境。
+
+### 方式二：运行 PowerShell 脚本
+```powershell
+.\ForceResize.ps1
+```
+
+### 构建为exe
+```shell
+ps2exe -InputFile ".\ForceResize.ps1" -OutputFile ".\ForceResize.exe" -RequireAdmin -NoConsole
+```
