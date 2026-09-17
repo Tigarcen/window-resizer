@@ -47,11 +47,24 @@ public class WinAPI {
     public static extern bool SetCursorPos(int X, int Y);
 
     [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
     public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
 
     // 鼠标事件常量
     public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+    // 置顶相关常量
+    public const int HWND_TOPMOST = -1;
+    public const int HWND_NOTOPMOST = -2;
+    public const uint SWP_SHOWWINDOW = 0x0040;
+    public const int GWL_EXSTYLE = -20;
+    public const int WS_EX_TOPMOST = 0x00000008;
 
     public struct POINT {
         public int X;
@@ -75,8 +88,8 @@ $screenHeight = $screen.Height
 
 # ---------- 创建主窗体 ----------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "窗口控制工具 (大小 + 位置)"
-$form.Size = New-Object System.Drawing.Size(450, 500)
+$form.Text = "窗口控制工具 (大小 + 位置 + 置顶)"
+$form.Size = New-Object System.Drawing.Size(450, 630)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
@@ -191,6 +204,31 @@ $lblStatus.Size = New-Object System.Drawing.Size(400, 25)
 $lblStatus.ForeColor = "Blue"
 $form.Controls.Add($lblStatus)
 
+# ---------- 第八行：窗口置顶按钮 ----------
+$btnTopMost = New-Object System.Windows.Forms.Button
+$btnTopMost.Text = "📌 窗口永久置顶"
+$btnTopMost.Location = New-Object System.Drawing.Point(20, 405)
+$btnTopMost.Size = New-Object System.Drawing.Size(200, 35)
+$btnTopMost.BackColor = "LightYellow"
+$form.Controls.Add($btnTopMost)
+
+# ---------- 第九行：置于最前面按钮 ----------
+$btnBringFront = New-Object System.Windows.Forms.Button
+$btnBringFront.Text = "⬆ 置于最前面"
+$btnBringFront.Location = New-Object System.Drawing.Point(230, 405)
+$btnBringFront.Size = New-Object System.Drawing.Size(200, 35)
+$btnBringFront.BackColor = "LightCyan"
+$form.Controls.Add($btnBringFront)
+
+# ---------- 第十行：强制结束窗口进程按钮 ----------
+$btnKill = New-Object System.Windows.Forms.Button
+$btnKill.Text = "❌ 强制结束窗口"
+$btnKill.Location = New-Object System.Drawing.Point(95, 450)
+$btnKill.Size = New-Object System.Drawing.Size(260, 35)
+$btnKill.BackColor = "MistyRose"
+$btnKill.ForeColor = "DarkRed"
+$form.Controls.Add($btnKill)
+
 # ---------- 拾取模式变量 ----------
 $script:isPicking = $false
 $script:timer = New-Object System.Windows.Forms.Timer
@@ -266,6 +304,9 @@ function Start-PickMode {
     $btnResize.Enabled = $false
     $trackX.Enabled = $false
     $trackY.Enabled = $false
+    $btnTopMost.Enabled = $false
+    $btnBringFront.Enabled = $false
+    $btnKill.Enabled = $false
 
     $hCursor = [WinAPI]::LoadCursor([IntPtr]::Zero, 32515) # IDC_CROSS
     if ($hCursor -ne [IntPtr]::Zero) {
@@ -296,6 +337,9 @@ function Stop-PickMode {
     $btnResize.Enabled = $true
     $trackX.Enabled = $true
     $trackY.Enabled = $true
+    $btnTopMost.Enabled = $true
+    $btnBringFront.Enabled = $true
+    $btnKill.Enabled = $true
 
     if ($lblStatus.Text -eq "请点击目标窗口（点击本工具无效）...") {
         $lblStatus.ForeColor = "Blue"
@@ -454,6 +498,175 @@ $btnResize.Add_Click({
     } else {
         $lblStatus.ForeColor = "Red"
         $lblStatus.Text = "调整失败，请尝试以管理员身份运行本脚本"
+    }
+})
+
+# ---------- 获取目标窗口句柄的辅助函数 ----------
+function Get-TargetHwnd {
+    $pidInput = $txtPid.Text.Trim()
+    if (-not $pidInput) {
+        $lblStatus.ForeColor = "Red"
+        $lblStatus.Text = "错误：请先拾取窗口或填写 PID！"
+        return [IntPtr]::Zero
+    }
+
+    $targetPid = $pidInput -as [int]
+    if ($targetPid -eq $null -or $targetPid -le 0) {
+        $lblStatus.ForeColor = "Red"
+        $lblStatus.Text = "错误：PID 必须是正整数！"
+        return [IntPtr]::Zero
+    }
+
+    try {
+        $proc = Get-Process -Id $targetPid -ErrorAction Stop
+        $hwnd = $proc.MainWindowHandle
+        if ($hwnd -eq 0) {
+            $lblStatus.ForeColor = "Red"
+            $lblStatus.Text = "错误：该进程无主窗口 (PID: $targetPid)"
+            return [IntPtr]::Zero
+        }
+        return $hwnd
+    } catch {
+        $lblStatus.ForeColor = "Red"
+        $lblStatus.Text = "错误：找不到 PID 为 $targetPid 的进程"
+        return [IntPtr]::Zero
+    }
+}
+
+# ---------- 窗口永久置顶按钮（切换） ----------
+$btnTopMost.Add_Click({
+    if ($script:isPicking) { Stop-PickMode }
+
+    $hwnd = Get-TargetHwnd
+    if ($hwnd -eq [IntPtr]::Zero) { return }
+
+    $SWP_NOMOVE = 0x0002
+    $SWP_NOSIZE = 0x0001
+    $SWP_NOACTIVATE = 0x0010
+    $flags = $SWP_NOMOVE -bor $SWP_NOSIZE -bor $SWP_NOACTIVATE
+
+    # 检测当前置顶状态
+    $exStyle = [WinAPI]::GetWindowLong($hwnd, [WinAPI]::GWL_EXSTYLE)
+    $isTopMost = ($exStyle -band [WinAPI]::WS_EX_TOPMOST) -ne 0
+
+    if ($isTopMost) {
+        # 当前已置顶，执行取消置顶
+        $result = [WinAPI]::SetWindowPos(
+            $hwnd,
+            [WinAPI]::HWND_NOTOPMOST,
+            0, 0, 0, 0,
+            $flags
+        )
+        if ($result) {
+            $lblStatus.ForeColor = "Green"
+            $lblStatus.Text = "✓ 已取消窗口置顶 (PID: $($txtPid.Text))"
+            $btnTopMost.Text = "📌 窗口永久置顶"
+            $btnTopMost.BackColor = "LightYellow"
+        } else {
+            $lblStatus.ForeColor = "Red"
+            $lblStatus.Text = "取消置顶失败，请尝试以管理员身份运行"
+        }
+    } else {
+        # 当前未置顶，执行置顶
+        $result = [WinAPI]::SetWindowPos(
+            $hwnd,
+            [WinAPI]::HWND_TOPMOST,
+            0, 0, 0, 0,
+            $flags
+        )
+        if ($result) {
+            $lblStatus.ForeColor = "Green"
+            $lblStatus.Text = "✓ 窗口已永久置顶 (PID: $($txtPid.Text))"
+            $btnTopMost.Text = "📌 取消置顶"
+            $btnTopMost.BackColor = "LightGreen"
+        } else {
+            $lblStatus.ForeColor = "Red"
+            $lblStatus.Text = "置顶失败，请尝试以管理员身份运行"
+        }
+    }
+})
+
+# ---------- 置于最前面按钮 ----------
+$btnBringFront.Add_Click({
+    if ($script:isPicking) { Stop-PickMode }
+
+    $hwnd = Get-TargetHwnd
+    if ($hwnd -eq [IntPtr]::Zero) { return }
+
+    # 先尝试用 SetForegroundWindow
+    $result = [WinAPI]::SetForegroundWindow($hwnd)
+
+    # 如果 SetForegroundWindow 因为前台锁定而失败，
+    # 使用 SetWindowPos 作为备选方案
+    if (-not $result) {
+        $SWP_NOMOVE = 0x0002
+        $SWP_NOSIZE = 0x0001
+        $SWP_NOACTIVATE = 0x0010
+        $flags = $SWP_NOMOVE -bor $SWP_NOSIZE -bor $SWP_NOACTIVATE
+        $result = [WinAPI]::SetWindowPos(
+            $hwnd,
+            [IntPtr]::Zero,  # HWND_TOP
+            0, 0, 0, 0,
+            $flags
+        )
+    }
+
+    if ($result) {
+        $lblStatus.ForeColor = "Green"
+        $lblStatus.Text = "✓ 窗口已置于最前面 (PID: $($txtPid.Text))"
+    } else {
+        $lblStatus.ForeColor = "Red"
+        $lblStatus.Text = "置于前方失败，可能需要管理员权限"
+    }
+})
+
+# ---------- 强制结束窗口进程按钮 ----------
+$btnKill.Add_Click({
+    if ($script:isPicking) { Stop-PickMode }
+
+    $pidInput = $txtPid.Text.Trim()
+    if (-not $pidInput) {
+        $lblStatus.ForeColor = "Red"
+        $lblStatus.Text = "错误：请先拾取窗口或填写 PID！"
+        return
+    }
+
+    $targetPid = $pidInput -as [int]
+    if ($targetPid -eq $null -or $targetPid -le 0) {
+        $lblStatus.ForeColor = "Red"
+        $lblStatus.Text = "错误：PID 必须是正整数！"
+        return
+    }
+
+    # 二次确认
+    $confirmResult = [System.Windows.Forms.MessageBox]::Show(
+        "确定要强制结束 PID $targetPid 的进程吗？`n`n此操作不可撤销！",
+        "确认结束进程",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+
+    if ($confirmResult -ne [System.Windows.Forms.DialogResult]::Yes) {
+        $lblStatus.ForeColor = "Blue"
+        $lblStatus.Text = "已取消结束进程"
+        return
+    }
+
+    try {
+        $proc = Get-Process -Id $targetPid -ErrorAction Stop
+        $procName = $proc.ProcessName
+        $proc.Kill()
+        $proc.WaitForExit(3000) | Out-Null
+
+        $lblStatus.ForeColor = "Green"
+        $lblStatus.Text = "✓ 已结束进程 $procName (PID: $targetPid)"
+
+        # 清空输入，重置状态
+        $txtPid.Text = ""
+        $script:currentPid = 0
+    } catch {
+        $lblStatus.ForeColor = "Red"
+        $lblStatus.Text = "结束进程失败 (PID: $targetPid)，可能需要管理员权限"
     }
 })
 
