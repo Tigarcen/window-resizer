@@ -50,5 +50,5 @@
 
 ### 构建为exe
 ```shell
-ps2exe -InputFile ".\ForceResize.ps1" -OutputFile ".\ForceResize.exe" -RequireAdmin -NoConsole
+ps2exe -InputFile ".\ForceResize.ps1" -OutputFile ".\ForceResize.exe" -RequireAdmin -NoConsole -version "0.0.1"
 ```
